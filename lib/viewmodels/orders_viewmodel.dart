@@ -18,7 +18,9 @@ class OrdersViewModel extends ChangeNotifier {
     );
     final supabase = SupabaseService();
     if (supabase.isInitialized) {
-      supabase.client.auth.onAuthStateChange.listen((_) => loadOrdersFromSupabase());
+      supabase.client.auth.onAuthStateChange.listen(
+        (_) => loadOrdersFromSupabase(),
+      );
     }
   }
 
@@ -34,7 +36,11 @@ class OrdersViewModel extends ChangeNotifier {
       final productModels = products.map(ProductModel.fromJson).toList();
       _orders
         ..clear()
-        ..addAll(rows.map((row) => OrderModel.fromSupabase(row, productsPool: productModels)));
+        ..addAll(
+          rows.map(
+            (row) => OrderModel.fromSupabase(row, productsPool: productModels),
+          ),
+        );
       notifyListeners();
     } catch (_) {}
   }
@@ -66,14 +72,14 @@ class OrdersViewModel extends ChangeNotifier {
       deliveryAddress: address,
       paymentMethod: paymentMethod,
       courier: const CourierInfo(
-        name: 'طارق الزهراني',
-        phone: '+966559876543',
-        vehicle: 'فورد تيريتوري رمادي',
-        rating: 4.92,
-        avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+        name: '',
+        phone: '',
+        vehicle: '',
+        avatarUrl: '',
+        rating: 0,
       ),
-      estimatedArrivalMinutes: 30,
-      driverProgress: 0.15,
+      estimatedArrivalMinutes: 0,
+      driverProgress: 0,
     );
 
     final supabase = SupabaseService();

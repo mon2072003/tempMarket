@@ -1,77 +1,65 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../core/services/supabase_service.dart';
 import '../data/models/order_model.dart';
 
 class DeliveryViewModel extends ChangeNotifier {
   OrderModel? _currentTrackingOrder;
-  Timer? _simulationTimer;
-  bool _isSimulating = false;
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
 
   OrderModel? get currentTrackingOrder => _currentTrackingOrder;
-  bool get isSimulating => _isSimulating;
-
-  DeliveryViewModel() {
-    startMovementSimulation();
-  }
 
   void setTrackingOrder(OrderModel order) {
     _currentTrackingOrder = order;
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => refreshTrackedOrder(),
+    );
+    refreshTrackedOrder();
     notifyListeners();
   }
 
-  void startMovementSimulation() {
-    _isSimulating = true;
-    _simulationTimer?.cancel();
-    _simulationTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      final order = _currentTrackingOrder;
-      if (order == null) {
-        timer.cancel();
-        _isSimulating = false;
-        return;
-      }
-      if (order.driverProgress < 0.95) {
-        final newProgress = order.driverProgress + 0.05;
-        final newEta = (order.estimatedArrivalMinutes > 2)
-            ? order.estimatedArrivalMinutes - 1
-            : 2;
+  Future<void> refreshTrackedOrder() async {
+    final current = _currentTrackingOrder;
+    final service = SupabaseService();
+    if (current == null || !service.isInitialized || _isRefreshing) return;
 
-        _currentTrackingOrder = OrderModel(
-          id: order.id, date: order.date, items: order.items,
-          subtotal: order.subtotal, tax: order.tax, deliveryFee: order.deliveryFee,
-          discount: order.discount, total: order.total, status: order.status,
-          deliveryAddress: order.deliveryAddress, paymentMethod: order.paymentMethod,
-          courier: order.courier,
-          estimatedArrivalMinutes: newEta,
-          driverProgress: newProgress,
+    _isRefreshing = true;
+    try {
+      final rows = await service.getCurrentUserOrders();
+      for (final row in rows) {
+        if (row['id']?.toString() != current.id) continue;
+        final courierName = row['courier_name']?.toString() ?? '';
+        _currentTrackingOrder = current.copyWith(
+          status: OrderStatus.fromString(row['status']?.toString()),
+          courier: CourierInfo(
+            name: courierName,
+            phone: row['courier_phone']?.toString() ?? '',
+            vehicle: row['courier_vehicle']?.toString() ?? '',
+            avatarUrl: row['courier_avatar']?.toString() ?? '',
+            rating: current.courier.rating,
+          ),
+          estimatedArrivalMinutes:
+              (row['estimated_arrival_minutes'] as num?)?.toInt() ?? 0,
+          driverProgress: (row['driver_progress'] as num?)?.toDouble() ?? 0,
         );
         notifyListeners();
-      } else {
-        // Driver arrived
-        _currentTrackingOrder = OrderModel(
-          id: order.id, date: order.date, items: order.items,
-          subtotal: order.subtotal, tax: order.tax, deliveryFee: order.deliveryFee,
-          discount: order.discount, total: order.total,
-          status: OrderStatus.delivered,
-          deliveryAddress: order.deliveryAddress, paymentMethod: order.paymentMethod,
-          courier: order.courier,
-          estimatedArrivalMinutes: 0,
-          driverProgress: 1.0,
-        );
-        _simulationTimer?.cancel();
-        _isSimulating = false;
-        notifyListeners();
+        break;
       }
-    });
-  }
-
-  void resetSimulation() {
-    if (_currentTrackingOrder == null) return;
-    startMovementSimulation();
+    } catch (_) {
+      // Keep showing the latest known order while the network is unavailable.
+    } finally {
+      _isRefreshing = false;
+    }
   }
 
   @override
   void dispose() {
-    _simulationTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 }

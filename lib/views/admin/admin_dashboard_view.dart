@@ -15,7 +15,6 @@ import '../../data/models/promo_code_model.dart';
 import '../../viewmodels/products_viewmodel.dart';
 import '../../viewmodels/theme_viewmodel.dart';
 import '../../viewmodels/auth_viewmodel.dart';
-import '../../viewmodels/orders_viewmodel.dart';
 
 class AdminDashboardView extends StatefulWidget {
   const AdminDashboardView({super.key});
@@ -286,18 +285,22 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
     final productsVM = Provider.of<ProductsViewModel>(context);
 
     final totalOrdersCount = _supabaseOrders.length;
-    double totalRevenue = 0.0;
-    int completedOrdersCount = 0;
-
-    if (_supabaseOrders.isNotEmpty) {
-      for (final o in _supabaseOrders) {
-        totalRevenue += (o['total'] as num?)?.toDouble() ?? 0.0;
-        if (o['status'] == 'delivered') completedOrdersCount++;
-      }
-    }
-
-    final avgOrderVal = totalOrdersCount > 0
-        ? (totalRevenue / totalOrdersCount)
+    final revenueOrders = _supabaseOrders
+        .where(
+          (order) => order['status']?.toString().toLowerCase() != 'cancelled',
+        )
+        .toList();
+    final totalRevenue = revenueOrders.fold<double>(
+      0,
+      (sum, order) => sum + ((order['total'] as num?)?.toDouble() ?? 0),
+    );
+    final completedOrdersCount = _supabaseOrders
+        .where(
+          (order) => order['status']?.toString().toLowerCase() == 'delivered',
+        )
+        .length;
+    final avgOrderVal = revenueOrders.isNotEmpty
+        ? totalRevenue / revenueOrders.length
         : 0.0;
     final userCount = _supabaseProfiles.length;
     final reviewRatings = _supabaseReviews
@@ -620,7 +623,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
                                 overflow: TextOverflow.ellipsis,
                               ),
                               trailing: Text(
-                                '${mean.toStringAsFixed(1)} âک… آ· ${entry.value.length}',
+                                '${mean.toStringAsFixed(1)} . ${entry.value.length}',
                               ),
                             );
                           },
@@ -1327,8 +1330,20 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
     AppLocalizations loc,
     Color primary,
   ) {
-    final ordersVM = Provider.of<OrdersViewModel>(context);
-    final allOrders = ordersVM.orders;
+    final productsVM = Provider.of<ProductsViewModel>(context);
+    final allOrders = _supabaseOrders
+        .map(
+          (row) => OrderModel.fromSupabase(
+            row,
+            productsPool: productsVM.allProducts,
+          ),
+        )
+        .toList();
+    final customerNames = <String, String>{
+      for (final profile in _supabaseProfiles)
+        if (profile['id'] != null && profile['name'] != null)
+          profile['id'].toString(): profile['name'].toString(),
+    };
 
     // Filter into In-Progress vs Successfully Delivered
     final inProgressOrders = allOrders
@@ -1373,6 +1388,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
                   loc,
                   primary,
                   isInProgress: true,
+                  customerNames: customerNames,
                 ),
                 _buildPurchasedOrdersList(
                   deliveredOrders,
@@ -1380,6 +1396,7 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
                   loc,
                   primary,
                   isInProgress: false,
+                  customerNames: customerNames,
                 ),
               ],
             ),
@@ -1395,7 +1412,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
     AppLocalizations loc,
     Color primary, {
     required bool isInProgress,
+    required Map<String, String> customerNames,
   }) {
+    if (orders.isEmpty && _isLoadingSupabaseData) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (orders.isEmpty) {
       return Center(
         child: Column(
@@ -1430,6 +1451,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final order = orders[index];
+        final customerName =
+            customerNames[order.customerId] ??
+            (order.customerId.isEmpty
+                ? (loc.isArabic ? '\u0639\u0645\u064a\u0644' : 'Customer')
+                : 'User ');
         return Card(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -1474,6 +1500,31 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
                     ),
                   ],
                 ),
+                if (order.customerId.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.person_outline_rounded,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            customerName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const Divider(height: 20),
 
                 // Purchased Items List
@@ -2685,389 +2736,692 @@ class _AdminDashboardViewState extends State<AdminDashboardView>
   void _showAddProductModal(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final productsVM = Provider.of<ProductsViewModel>(context, listen: false);
+    final formKey = GlobalKey<FormState>();
     final nameArCtrl = TextEditingController();
     final nameEnCtrl = TextEditingController();
+    final descriptionArCtrl = TextEditingController();
+    final descriptionEnCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
     final oldPriceCtrl = TextEditingController();
     final stockCtrl = TextEditingController(text: '100');
-    final descCtrl = TextEditingController();
-    String bType = _selectedBusinessType.name;
-    String? selectedCategoryId = productsVM.categories.isNotEmpty
-        ? productsVM.categories.first.id
+    final unitArCtrl = TextEditingController(text: '\u0642\u0637\u0639\u0629');
+    final unitEnCtrl = TextEditingController(text: 'Piece');
+    final specsArCtrl = TextEditingController();
+    final specsEnCtrl = TextEditingController();
+    final pickedImages = <({Uint8List bytes, String name})>[];
+    final requiredMessage = loc.isArabic
+        ? '\u0645\u0637\u0644\u0648\u0628'
+        : 'Required';
+    final invalidPriceMessage = loc.isArabic
+        ? '\u0623\u062f\u062e\u0644 \u0633\u0639\u0631\u0627\u064b \u0635\u062d\u064a\u062d\u0627\u064b \u0623\u0643\u0628\u0631 \u0645\u0646 \u0635\u0641\u0631'
+        : 'Enter a valid price greater than zero';
+    var businessType = _selectedBusinessType.name;
+    var selectedCategoryId = productsVM.allCategories.isNotEmpty
+        ? productsVM.allCategories.first.id
         : null;
-    Uint8List? pickedBytes;
-    String? pickedFileName;
-    final extraPickedImages = <({Uint8List bytes, String name})>[];
-    bool isSaving = false;
+    var isInStock = true;
+    var isFeatured = false;
+    var isSaving = false;
+    final isArabic = loc.isArabic;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-                left: 20,
-                right: 20,
-                top: 20,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          loc.isArabic ? 'إضافة منتج جديد' : 'Add New Product',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+    String text(String english, String arabic) => isArabic ? arabic : english;
 
-                    // Image picker button
-                    Center(
-                      child: InkWell(
-                        onTap: () async {
-                          final picked = await MediaService.pickProductImage(
-                            context,
-                          );
-                          if (picked != null) {
-                            setModalState(() {
-                              pickedBytes = picked.bytes;
-                              pickedFileName = picked.name;
-                            });
-                          }
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          height: 120,
-                          decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withAlpha(20),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withAlpha(60),
-                            ),
-                          ),
-                          child: pickedBytes != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.memory(
-                                    pickedBytes!,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_a_photo_outlined,
-                                      size: 36,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      loc.isArabic
-                                          ? 'التقاط أو اختيار صورة المنتج'
-                                          : 'Select Product Image',
-                                      style: TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.primary,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
+    Map<String, String> parseSpecifications(String value) {
+      final result = <String, String>{};
+      for (final line in value.split('\n')) {
+        final separator = line.indexOf(':');
+        if (separator <= 0) continue;
+        final key = line.substring(0, separator).trim();
+        final detail = line.substring(separator + 1).trim();
+        if (key.isNotEmpty && detail.isNotEmpty) result[key] = detail;
+      }
+      return result;
+    }
 
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: extraPickedImages.length >= 7
-                              ? null
-                              : () async {
-                                  final picked =
-                                      await MediaService.pickProductImage(
-                                        context,
-                                      );
-                                  if (picked != null)
-                                    setModalState(
-                                      () => extraPickedImages.add((
-                                        bytes: picked.bytes,
-                                        name: picked.name,
-                                      )),
-                                    );
-                                },
-                          icon: const Icon(Icons.add_photo_alternate_outlined),
-                          label: Text(
-                            loc.isArabic
-                                ? 'إضافة صور أخرى (${extraPickedImages.length}/7)'
-                                : 'Add more photos (${extraPickedImages.length}/7)',
-                          ),
-                        ),
-                        ...extraPickedImages.asMap().entries.map(
-                          (entry) => InputChip(
-                            avatar: ClipOval(
-                              child: Image.memory(
-                                entry.value.bytes,
-                                width: 24,
-                                height: 24,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                            label: Text('${entry.key + 2}'),
-                            onDeleted: () => setModalState(
-                              () => extraPickedImages.removeAt(entry.key),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
+    InputDecoration decoration(String label, IconData icon) =>
+        InputDecoration(labelText: label, prefixIcon: Icon(icon));
 
-                    TextField(
-                      controller: nameArCtrl,
-                      decoration: InputDecoration(
-                        labelText: loc.isArabic
-                            ? 'اسم المنتج (عربي)'
-                            : 'Product Name (AR)',
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: nameEnCtrl,
-                      decoration: InputDecoration(
-                        labelText: loc.isArabic
-                            ? 'اسم المنتج (إنجليزي)'
-                            : 'Product Name (EN)',
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      value:
-                          productsVM.categories.any(
-                            (category) => category.id == selectedCategoryId,
-                          )
-                          ? selectedCategoryId
-                          : null,
-                      decoration: InputDecoration(
-                        labelText: loc.isArabic
-                            ? 'تصنيف المنتج'
-                            : 'Product category',
-                        border: const OutlineInputBorder(),
-                      ),
-                      items: productsVM.categories
-                          .map(
-                            (category) => DropdownMenuItem(
-                              value: category.id,
-                              child: Text(category.localizedName(loc.isArabic)),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) =>
-                          setModalState(() => selectedCategoryId = value),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: priceCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: loc.translate('price'),
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: stockCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              labelText: loc.isArabic ? 'المخزون' : 'Stock',
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: oldPriceCtrl,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: loc.isArabic
-                            ? 'السعر قبل الخصم (اختياري)'
-                            : 'Original price (optional offer)',
-                        helperText: loc.isArabic
-                            ? 'اتركه فارغًا إذا لم يوجد عرض'
-                            : 'Leave blank when there is no offer',
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: descCtrl,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        labelText: loc.translate('description'),
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+    Widget field(
+      TextEditingController controller,
+      String label, {
+      IconData? icon,
+      TextInputType? keyboardType,
+      TextDirection? direction,
+      int maxLines = 1,
+      String? Function(String?)? validator,
+    }) => TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      textDirection: direction,
+      maxLines: maxLines,
+      minLines: maxLines == 1 ? 1 : null,
+      decoration: decoration(label, icon ?? Icons.edit_outlined),
+      validator: validator,
+    );
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: isSaving
-                            ? null
-                            : () async {
-                                final nameAr = nameArCtrl.text.trim();
-                                final price =
-                                    double.tryParse(priceCtrl.text.trim()) ??
-                                    0.0;
-                                final oldPrice = double.tryParse(
-                                  oldPriceCtrl.text.trim(),
-                                );
-                                if (nameAr.isEmpty ||
-                                    price <= 0 ||
-                                    (oldPrice != null && oldPrice <= price) ||
-                                    (pickedBytes == null &&
-                                        extraPickedImages.isEmpty)) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        loc.isArabic
-                                            ? 'يرجى إدخال اسم وسعر صحيح للمنتج'
-                                            : 'Invalid name or price',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
-
-                                setModalState(() => isSaving = true);
-                                final newProd = ProductModel(
-                                  id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
-                                  nameAr: nameAr,
-                                  nameEn: nameEnCtrl.text.trim().isNotEmpty
-                                      ? nameEnCtrl.text.trim()
-                                      : nameAr,
-                                  descriptionAr: descCtrl.text.trim(),
-                                  descriptionEn: descCtrl.text.trim(),
-                                  price: price,
-                                  oldPrice: oldPrice,
-                                  categoryId: selectedCategoryId ?? '',
-                                  businessType: bType,
-                                  images: const [],
-                                  inStock: true,
-                                  stockCount:
-                                      int.tryParse(stockCtrl.text.trim()) ??
-                                      100,
-                                  unitAr: 'قطعة',
-                                  unitEn: 'Piece',
-                                );
-
-                                final success = await productsVM
-                                    .addProductToSupabase(
-                                      newProd,
-                                      imageBytesList: [
-                                        if (pickedBytes != null) pickedBytes!,
-                                        ...extraPickedImages.map(
-                                          (image) => image.bytes,
-                                        ),
-                                      ],
-                                      imageFileNames: [
-                                        if (pickedFileName != null)
-                                          pickedFileName!,
-                                        ...extraPickedImages.map(
-                                          (image) => image.name,
-                                        ),
-                                      ],
-                                    );
-
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        success
-                                            ? (loc.isArabic
-                                                  ? 'تمت إضافة المنتج بنجاح!'
-                                                  : 'Product added successfully!')
-                                            : 'Failed: ${productsVM.errorMessage}',
-                                      ),
-                                      backgroundColor: success
-                                          ? const Color(0xFF10B981)
-                                          : Colors.red,
-                                    ),
-                                  );
-                                  if (success) Navigator.pop(ctx);
-                                }
-                              },
-                        child: isSaving
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : Text(
-                                loc.isArabic ? 'حفظ المنتج' : 'Save Product',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            );
-          },
+    Widget pair(Widget first, Widget second) => LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 620;
+        final width = isWide
+            ? (constraints.maxWidth - 12) / 2
+            : constraints.maxWidth;
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            SizedBox(width: width, child: first),
+            SizedBox(width: width, child: second),
+          ],
         );
       },
     );
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (formContext, setModalState) {
+          final categories = productsVM.allCategories;
+          final colors = Theme.of(formContext).colorScheme;
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 14,
+              bottom: MediaQuery.viewInsetsOf(formContext).bottom + 16,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 760,
+                  maxHeight: MediaQuery.sizeOf(formContext).height * 0.88,
+                ),
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: colors.outlineVariant,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: colors.primary.withAlpha(18),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Icon(
+                              Icons.add_box_rounded,
+                              color: colors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              text(
+                                'Add product',
+                                '\u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062a\u062c',
+                              ),
+                              style: Theme.of(formContext).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: text(
+                              'Close',
+                              '\u0625\u063a\u0644\u0627\u0642',
+                            ),
+                            onPressed: isSaving
+                                ? null
+                                : () => Navigator.pop(sheetContext),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                text(
+                                  'Product photos',
+                                  '\u0635\u0648\u0631 \u0627\u0644\u0645\u0646\u062a\u062c',
+                                ),
+                                style: Theme.of(formContext)
+                                    .textTheme
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  ...pickedImages.asMap().entries.map(
+                                    (entry) => SizedBox(
+                                      width: 84,
+                                      height: 84,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            child: Image.memory(
+                                              entry.value.bytes,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                          Positioned(
+                                            right: 2,
+                                            top: 2,
+                                            child: IconButton.filledTonal(
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              tooltip: text(
+                                                'Remove photo',
+                                                '\u062d\u0630\u0641 \u0627\u0644\u0635\u0648\u0631\u0629',
+                                              ),
+                                              onPressed: () => setModalState(
+                                                () => pickedImages.removeAt(
+                                                  entry.key,
+                                                ),
+                                              ),
+                                              icon: const Icon(
+                                                Icons.close_rounded,
+                                                size: 16,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (pickedImages.length < 7)
+                                    SizedBox(
+                                      width: 84,
+                                      height: 84,
+                                      child: OutlinedButton(
+                                        onPressed: isSaving
+                                            ? null
+                                            : () async {
+                                                final picked =
+                                                    await MediaService.pickProductImage(
+                                                      formContext,
+                                                    );
+                                                if (picked != null &&
+                                                    formContext.mounted) {
+                                                  setModalState(
+                                                    () => pickedImages.add((
+                                                      bytes: picked.bytes,
+                                                      name: picked.name,
+                                                    )),
+                                                  );
+                                                }
+                                              },
+                                        style: OutlinedButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                          ),
+                                        ),
+                                        child: const Icon(
+                                          Icons.add_photo_alternate_outlined,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                text(
+                                  'Add up to 7 photos. The first photo is used as the cover.',
+                                  '\u0623\u0636\u0641 \u062d\u062a\u0649 7 \u0635\u0648\u0631. \u0627\u0644\u0635\u0648\u0631\u0629 \u0627\u0644\u0623\u0648\u0644\u0649 \u0647\u064a \u0635\u0648\u0631\u0629 \u0627\u0644\u063a\u0644\u0627\u0641.',
+                                ),
+                                style: Theme.of(
+                                  formContext,
+                                ).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 18),
+                              pair(
+                                field(
+                                  nameArCtrl,
+                                  text(
+                                    'Product name (Arabic)',
+                                    '\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062a\u062c \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629',
+                                  ),
+                                  direction: TextDirection.rtl,
+                                  icon: Icons.translate_rounded,
+                                  validator: (value) =>
+                                      value == null || value.trim().isEmpty
+                                      ? requiredMessage
+                                      : null,
+                                ),
+                                field(
+                                  nameEnCtrl,
+                                  text(
+                                    'Product name (English)',
+                                    '\u0627\u0633\u0645 \u0627\u0644\u0645\u0646\u062a\u062c \u0628\u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629',
+                                  ),
+                                  direction: TextDirection.ltr,
+                                  icon: Icons.translate_rounded,
+                                  validator: (value) =>
+                                      value == null || value.trim().isEmpty
+                                      ? requiredMessage
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              field(
+                                descriptionArCtrl,
+                                text(
+                                  'Description (Arabic)',
+                                  '\u0627\u0644\u0648\u0635\u0641 \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629',
+                                ),
+                                direction: TextDirection.rtl,
+                                maxLines: 3,
+                                icon: Icons.notes_rounded,
+                              ),
+                              const SizedBox(height: 12),
+                              field(
+                                descriptionEnCtrl,
+                                text(
+                                  'Description (English)',
+                                  '\u0627\u0644\u0648\u0635\u0641 \u0628\u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629',
+                                ),
+                                direction: TextDirection.ltr,
+                                maxLines: 3,
+                                icon: Icons.notes_rounded,
+                              ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                initialValue:
+                                    categories.any(
+                                      (item) => item.id == selectedCategoryId,
+                                    )
+                                    ? selectedCategoryId
+                                    : null,
+                                isExpanded: true,
+                                decoration: decoration(
+                                  text(
+                                    'Category',
+                                    '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
+                                  ),
+                                  Icons.category_outlined,
+                                ),
+                                items: categories
+                                    .map(
+                                      (category) => DropdownMenuItem(
+                                        value: category.id,
+                                        child: Text(
+                                          category.localizedName(isArabic),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value != null)
+                                    setModalState(
+                                      () => selectedCategoryId = value,
+                                    );
+                                },
+                                validator: (value) =>
+                                    value == null ? requiredMessage : null,
+                              ),
+                              const SizedBox(height: 12),
+                              DropdownButtonFormField<String>(
+                                initialValue: businessType,
+                                isExpanded: true,
+                                decoration: decoration(
+                                  text(
+                                    'Business type',
+                                    '\u0646\u0648\u0639 \u0627\u0644\u0646\u0634\u0627\u0637',
+                                  ),
+                                  Icons.storefront_outlined,
+                                ),
+                                items: BusinessType.values
+                                    .map(
+                                      (type) => DropdownMenuItem(
+                                        value: type.name,
+                                        child: Text(
+                                          isArabic
+                                              ? type.titleAr
+                                              : type.titleEn,
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (value) {
+                                  if (value != null)
+                                    setModalState(() => businessType = value);
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              pair(
+                                field(
+                                  priceCtrl,
+                                  loc.translate('price'),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  icon: Icons.payments_outlined,
+                                  validator: (value) {
+                                    final price = double.tryParse(
+                                      value?.trim() ?? '',
+                                    );
+                                    return price == null || price <= 0
+                                        ? invalidPriceMessage
+                                        : null;
+                                  },
+                                ),
+                                field(
+                                  oldPriceCtrl,
+                                  text(
+                                    'Original price (optional offer)',
+                                    '\u0627\u0644\u0633\u0639\u0631 \u0642\u0628\u0644 \u0627\u0644\u062e\u0635\u0645 \u0644\u0644\u0639\u0631\u0636',
+                                  ),
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  icon: Icons.sell_outlined,
+                                  validator: (value) {
+                                    final raw = value?.trim() ?? '';
+                                    if (raw.isEmpty) return null;
+                                    final old = double.tryParse(raw);
+                                    final price = double.tryParse(
+                                      priceCtrl.text.trim(),
+                                    );
+                                    return old == null ||
+                                            price == null ||
+                                            old <= price
+                                        ? text(
+                                            'Must be greater than the sale price',
+                                            '\u064a\u062c\u0628 \u0623\u0646 \u064a\u0643\u0648\u0646 \u0623\u0643\u0628\u0631 \u0645\u0646 \u0633\u0639\u0631 \u0627\u0644\u0628\u064a\u0639',
+                                          )
+                                        : null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              pair(
+                                field(
+                                  stockCtrl,
+                                  text(
+                                    'Stock quantity',
+                                    '\u0643\u0645\u064a\u0629 \u0627\u0644\u0645\u062e\u0632\u0648\u0646',
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  icon: Icons.inventory_2_outlined,
+                                  validator: (value) {
+                                    final stock = int.tryParse(
+                                      value?.trim() ?? '',
+                                    );
+                                    return stock == null || stock < 0
+                                        ? text(
+                                            'Enter a valid quantity',
+                                            '\u0623\u062f\u062e\u0644 \u0643\u0645\u064a\u0629 \u0635\u062d\u064a\u062d\u0629',
+                                          )
+                                        : null;
+                                  },
+                                ),
+                                field(
+                                  unitArCtrl,
+                                  text(
+                                    'Unit (Arabic)',
+                                    '\u0648\u062d\u062f\u0629 \u0627\u0644\u0642\u064a\u0627\u0633 \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629',
+                                  ),
+                                  direction: TextDirection.rtl,
+                                  icon: Icons.straighten_rounded,
+                                  validator: (value) =>
+                                      value == null || value.trim().isEmpty
+                                      ? requiredMessage
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              field(
+                                unitEnCtrl,
+                                text(
+                                  'Unit (English)',
+                                  '\u0648\u062d\u062f\u0629 \u0627\u0644\u0642\u064a\u0627\u0633 \u0628\u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629',
+                                ),
+                                direction: TextDirection.ltr,
+                                icon: Icons.straighten_rounded,
+                                validator: (value) =>
+                                    value == null || value.trim().isEmpty
+                                    ? requiredMessage
+                                    : null,
+                              ),
+                              const SizedBox(height: 10),
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  text(
+                                    'Available for purchase',
+                                    '\u0645\u062a\u0627\u062d \u0644\u0644\u0634\u0631\u0627\u0621',
+                                  ),
+                                ),
+                                value: isInStock,
+                                onChanged: (value) =>
+                                    setModalState(() => isInStock = value),
+                              ),
+                              SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  text(
+                                    'Featured product',
+                                    '\u0645\u0646\u062a\u062c \u0645\u0645\u064a\u0632',
+                                  ),
+                                ),
+                                value: isFeatured,
+                                onChanged: (value) =>
+                                    setModalState(() => isFeatured = value),
+                              ),
+                              field(
+                                specsArCtrl,
+                                text(
+                                  'Specifications (Arabic)',
+                                  '\u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062a \u0628\u0627\u0644\u0639\u0631\u0628\u064a\u0629',
+                                ),
+                                direction: TextDirection.rtl,
+                                maxLines: 4,
+                                icon: Icons.list_alt_rounded,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                text(
+                                  'Use one line per item: name: value.',
+                                  '\u0627\u0643\u062a\u0628 \u0643\u0644 \u0645\u0648\u0627\u0635\u0641\u0629 \u0641\u064a \u0633\u0637\u0631: \u0627\u0644\u0627\u0633\u0645: \u0627\u0644\u0642\u064a\u0645\u0629.',
+                                ),
+                                style: Theme.of(
+                                  formContext,
+                                ).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 12),
+                              field(
+                                specsEnCtrl,
+                                text(
+                                  'Specifications (English)',
+                                  '\u0627\u0644\u0645\u0648\u0627\u0635\u0641\u0627\u062a \u0628\u0627\u0644\u0625\u0646\u062c\u0644\u064a\u0632\u064a\u0629',
+                                ),
+                                direction: TextDirection.ltr,
+                                maxLines: 4,
+                                icon: Icons.list_alt_rounded,
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: FilledButton.icon(
+                          onPressed: isSaving
+                              ? null
+                              : () async {
+                                  if (!(formKey.currentState?.validate() ??
+                                      false))
+                                    return;
+                                  if (pickedImages.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          text(
+                                            'Add at least one product photo.',
+                                            '\u0623\u0636\u0641 \u0635\u0648\u0631\u0629 \u0648\u0627\u062d\u062f\u0629 \u0639\u0644\u0649 \u0627\u0644\u0623\u0642\u0644.',
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  setModalState(() => isSaving = true);
+                                  final price = double.parse(
+                                    priceCtrl.text.trim(),
+                                  );
+                                  final oldPriceText = oldPriceCtrl.text.trim();
+                                  final newProduct = ProductModel(
+                                    id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
+                                    nameAr: nameArCtrl.text.trim(),
+                                    nameEn: nameEnCtrl.text.trim(),
+                                    descriptionAr: descriptionArCtrl.text
+                                        .trim(),
+                                    descriptionEn: descriptionEnCtrl.text
+                                        .trim(),
+                                    price: price,
+                                    oldPrice: double.tryParse(oldPriceText),
+                                    categoryId: selectedCategoryId!,
+                                    businessType: businessType,
+                                    images: const [],
+                                    inStock: isInStock,
+                                    stockCount: int.parse(
+                                      stockCtrl.text.trim(),
+                                    ),
+                                    unitAr: unitArCtrl.text.trim(),
+                                    unitEn: unitEnCtrl.text.trim(),
+                                    specificationsAr: parseSpecifications(
+                                      specsArCtrl.text,
+                                    ),
+                                    specificationsEn: parseSpecifications(
+                                      specsEnCtrl.text,
+                                    ),
+                                    isFeatured: isFeatured,
+                                  );
+                                  final success = await productsVM
+                                      .addProductToSupabase(
+                                        newProduct,
+                                        imageBytesList: pickedImages
+                                            .map((image) => image.bytes)
+                                            .toList(),
+                                        imageFileNames: pickedImages
+                                            .map((image) => image.name)
+                                            .toList(),
+                                      );
+                                  if (!mounted || !formContext.mounted) return;
+                                  if (success) {
+                                    Navigator.pop(sheetContext);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          text(
+                                            'Product added successfully.',
+                                            '\u062a\u0645 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0646\u062a\u062c \u0628\u0646\u062c\u0627\u062d.',
+                                          ),
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF10B981,
+                                        ),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  } else {
+                                    setModalState(() => isSaving = false);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          productsVM.errorMessage ??
+                                              text(
+                                                'Could not add product.',
+                                                '\u062a\u0639\u0630\u0631 \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0646\u062a\u062c.',
+                                              ),
+                                        ),
+                                        backgroundColor: Colors.red,
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                  }
+                                },
+                          icon: isSaving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.add_rounded),
+                          label: Text(
+                            isSaving
+                                ? text(
+                                    'Adding product...',
+                                    '\u062c\u0627\u0631\u064a \u0625\u0636\u0627\u0641\u0629 \u0627\u0644\u0645\u0646\u062a\u062c...',
+                                  )
+                                : text(
+                                    'Add product',
+                                    '\u0625\u0636\u0627\u0641\u0629 \u0645\u0646\u062a\u062c',
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        nameArCtrl.dispose();
+        nameEnCtrl.dispose();
+        descriptionArCtrl.dispose();
+        descriptionEnCtrl.dispose();
+        priceCtrl.dispose();
+        oldPriceCtrl.dispose();
+        stockCtrl.dispose();
+        unitArCtrl.dispose();
+        unitEnCtrl.dispose();
+        specsArCtrl.dispose();
+        specsEnCtrl.dispose();
+      });
+    });
   }
 
-  // ==========================================
   // DIALOG: EDIT PRODUCT IN SUPABASE
   // ==========================================
   void _showEditProductDialog(BuildContext context, ProductModel product) {

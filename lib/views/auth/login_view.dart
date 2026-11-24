@@ -114,8 +114,9 @@ class _LoginViewState extends State<LoginView> {
                     prefixIcon: Icons.email_outlined,
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? loc.translate('email') : null,
+                    validator: (v) => (v == null || v.isEmpty)
+                        ? loc.translate('email')
+                        : null,
                   ),
                   const SizedBox(height: 16),
 
@@ -126,14 +127,17 @@ class _LoginViewState extends State<LoginView> {
                     prefixIcon: Icons.lock_outline_rounded,
                     controller: _passwordController,
                     isPassword: true,
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? loc.translate('password') : null,
+                    validator: (v) => (v == null || v.isEmpty)
+                        ? loc.translate('password')
+                        : null,
                   ),
                   const SizedBox(height: 8),
 
                   // Forgot Password
                   Align(
-                    alignment: loc.isArabic ? Alignment.centerLeft : Alignment.centerRight,
+                    alignment: loc.isArabic
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
                     child: TextButton(
                       onPressed: _sendPasswordReset,
                       child: Text(
@@ -165,8 +169,17 @@ class _LoginViewState extends State<LoginView> {
                     isLoading: authVM.isLoading,
                     onPressed: () async {
                       if (_formKey.currentState?.validate() ?? false) {
-                        final success = await authVM.login(_emailController.text, _passwordController.text);
-                        if (success && context.mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationView()));
+                        final success = await authVM.login(
+                          _emailController.text,
+                          _passwordController.text,
+                        );
+                        if (success && context.mounted)
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MainNavigationView(),
+                            ),
+                          );
                       }
                     },
                   ),
@@ -174,20 +187,47 @@ class _LoginViewState extends State<LoginView> {
 
                   // Continue as Guest Button
                   CustomButton(
-                    text: loc.isArabic ? 'تسجيل الدخول كضيف' : 'Continue as Guest',
+                    text: loc.isArabic
+                        ? 'تسجيل الدخول كضيف'
+                        : 'Continue as Guest',
                     isOutlined: true,
-                    onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationView())),
+                    onPressed: () => Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MainNavigationView(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 24),
 
                   // Register Link
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text(loc.translate('dont_have_account'), style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface.withAlpha(160))),
+                      Text(
+                        loc.translate('dont_have_account'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: theme.colorScheme.onSurface.withAlpha(160),
+                        ),
+                      ),
                       TextButton(
-                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterView())),
-                        child: Text(loc.translate('register'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: primary)),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const RegisterView(),
+                          ),
+                        ),
+                        child: Text(
+                          loc.translate('register'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: primary,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -204,19 +244,38 @@ class _LoginViewState extends State<LoginView> {
     final email = _emailController.text.trim();
     final loc = AppLocalizations.of(context);
     if (email.isEmpty || !email.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.isArabic ? 'أدخل بريدك الإلكتروني أولاً' : 'Enter your email address first.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            loc.isArabic
+                ? 'أدخل بريدك الإلكتروني أولاً'
+                : 'Enter your email address first.',
+          ),
+        ),
+      );
       return;
     }
     try {
       await SupabaseService().sendPasswordReset(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.isArabic ? 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك' : 'Password reset link sent to your email.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            loc.isArabic
+                ? 'تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك'
+                : 'Password reset link sent to your email.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+      );
     }
   }
 }
+
 /*
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(

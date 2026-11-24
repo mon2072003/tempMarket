@@ -18,6 +18,7 @@ class SupabaseService {
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
   String? lastPromoCodeError;
+  String? lastCourierActionError;
 
   SupabaseClient get client => Supabase.instance.client;
 
@@ -54,11 +55,17 @@ class SupabaseService {
     if (!_isInitialized) return null;
 
     try {
-      final path = 'products/${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      await client.storage.from(SupabaseConfig.productImagesBucket).uploadBinary(
+      final path =
+          'products/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      await client.storage
+          .from(SupabaseConfig.productImagesBucket)
+          .uploadBinary(
             path,
             imageBytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
           );
 
       final publicUrl = client.storage
@@ -80,13 +87,20 @@ class SupabaseService {
 
     try {
       final path = 'avatars/${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      await client.storage.from(SupabaseConfig.avatarsBucket).uploadBinary(
+      await client.storage
+          .from(SupabaseConfig.avatarsBucket)
+          .uploadBinary(
             path,
             imageBytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
           );
 
-      return client.storage.from(SupabaseConfig.avatarsBucket).getPublicUrl(path);
+      return client.storage
+          .from(SupabaseConfig.avatarsBucket)
+          .getPublicUrl(path);
     } catch (e) {
       return null;
     }
@@ -176,37 +190,44 @@ class SupabaseService {
   Future<bool> updateProduct(ProductModel product) async {
     if (!_isInitialized) throw Exception('Supabase is not initialized');
     try {
-      await client.from('products').update({
-        'name_ar': product.nameAr,
-        'name_en': product.nameEn,
-        'description_ar': product.descriptionAr,
-        'description_en': product.descriptionEn,
-        'price': product.price,
-        'old_price': product.oldPrice,
-        if (product.categoryId.isNotEmpty) 'category_id': product.categoryId,
-        'business_type': product.businessType,
-        'images': product.images,
-        'in_stock': product.inStock,
-        'stock_count': product.stockCount,
-        'unit_ar': product.unitAr,
-        'unit_en': product.unitEn,
-        'specifications_ar': product.specificationsAr,
-        'specifications_en': product.specificationsEn,
-        'is_featured': product.isFeatured,
-      }).eq('id', product.id);
+      await client
+          .from('products')
+          .update({
+            'name_ar': product.nameAr,
+            'name_en': product.nameEn,
+            'description_ar': product.descriptionAr,
+            'description_en': product.descriptionEn,
+            'price': product.price,
+            'old_price': product.oldPrice,
+            if (product.categoryId.isNotEmpty)
+              'category_id': product.categoryId,
+            'business_type': product.businessType,
+            'images': product.images,
+            'in_stock': product.inStock,
+            'stock_count': product.stockCount,
+            'unit_ar': product.unitAr,
+            'unit_en': product.unitEn,
+            'specifications_ar': product.specificationsAr,
+            'specifications_en': product.specificationsEn,
+            'is_featured': product.isFeatured,
+          })
+          .eq('id', product.id);
       return true;
     } catch (e) {
       try {
-        await client.from('products').update({
-          'name_ar': product.nameAr,
-          'name_en': product.nameEn,
-          'description_ar': product.descriptionAr,
-          'description_en': product.descriptionEn,
-          'price': product.price,
-          'images': product.images,
-          'in_stock': product.inStock,
-          'stock_count': product.stockCount,
-        }).eq('id', product.id);
+        await client
+            .from('products')
+            .update({
+              'name_ar': product.nameAr,
+              'name_en': product.nameEn,
+              'description_ar': product.descriptionAr,
+              'description_en': product.descriptionEn,
+              'price': product.price,
+              'images': product.images,
+              'in_stock': product.inStock,
+              'stock_count': product.stockCount,
+            })
+            .eq('id', product.id);
         return true;
       } catch (fallbackError) {
         throw Exception('Product update failed: $fallbackError');
@@ -226,7 +247,9 @@ class SupabaseService {
   }
 
   /// Fetch categories from Supabase
-  Future<List<Map<String, dynamic>>> getCategories({String? businessType}) async {
+  Future<List<Map<String, dynamic>>> getCategories({
+    String? businessType,
+  }) async {
     if (!_isInitialized) throw Exception('Supabase is not initialized');
 
     try {
@@ -243,7 +266,8 @@ class SupabaseService {
 
   /// Insert a new category in Supabase
   Future<bool> insertCategory(CategoryModel category) async {
-    if (!_isInitialized) throw StateError('The data service is not initialized.');
+    if (!_isInitialized)
+      throw StateError('The data service is not initialized.');
 
     try {
       await client.from('categories').insert({
@@ -263,12 +287,15 @@ class SupabaseService {
   Future<bool> updateCategory(CategoryModel category) async {
     if (!_isInitialized) return false;
     try {
-      await client.from('categories').update({
-        'name_ar': category.nameAr,
-        'name_en': category.nameEn,
-        'business_type': category.businessType,
-        'product_count': category.productCount,
-      }).eq('id', category.id);
+      await client
+          .from('categories')
+          .update({
+            'name_ar': category.nameAr,
+            'name_en': category.nameEn,
+            'business_type': category.businessType,
+            'product_count': category.productCount,
+          })
+          .eq('id', category.id);
       return true;
     } catch (_) {
       return false;
@@ -287,11 +314,15 @@ class SupabaseService {
   }
 
   Future<List<PromoCodeModel>> getPromoCodes() async {
-    if (!_isInitialized) throw Exception('The data service is not initialized.');
-    final rows = await client.from('promo_codes').select().order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(rows)
-        .map(PromoCodeModel.fromJson)
-        .toList();
+    if (!_isInitialized)
+      throw Exception('The data service is not initialized.');
+    final rows = await client
+        .from('promo_codes')
+        .select()
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(
+      rows,
+    ).map(PromoCodeModel.fromJson).toList();
   }
 
   Future<PromoCodeModel?> validatePromoCode(String code) async {
@@ -304,13 +335,17 @@ class SupabaseService {
         .maybeSingle();
     if (row == null) return null;
     final promo = PromoCodeModel.fromJson(row);
-    if (promo.expiresAt != null && promo.expiresAt!.isBefore(DateTime.now().toUtc())) {
+    if (promo.expiresAt != null &&
+        promo.expiresAt!.isBefore(DateTime.now().toUtc())) {
       return null;
     }
     return promo;
   }
 
-  Future<bool> savePromoCode(PromoCodeModel promo, {required bool isNew}) async {
+  Future<bool> savePromoCode(
+    PromoCodeModel promo, {
+    required bool isNew,
+  }) async {
     lastPromoCodeError = null;
     if (!_isInitialized) {
       lastPromoCodeError = 'The data service is not initialized.';
@@ -320,7 +355,10 @@ class SupabaseService {
       if (isNew) {
         await client.from('promo_codes').insert(promo.toJson());
       } else {
-        await client.from('promo_codes').update(promo.toJson()).eq('code', promo.code);
+        await client
+            .from('promo_codes')
+            .update(promo.toJson())
+            .eq('code', promo.code);
       }
       return true;
     } catch (error) {
@@ -361,28 +399,29 @@ class SupabaseService {
         'delivery_address': order.deliveryAddress,
         'dest_lat': order.destLat,
         'dest_lng': order.destLng,
-        'driver_progress': order.driverProgress,
-        'courier_name': order.courier.name,
-        'courier_phone': order.courier.phone,
-        'courier_vehicle': order.courier.vehicle,
-        'courier_avatar': order.courier.avatarUrl,
+        'driver_progress': 0,
+        'courier_name': null,
+        'courier_phone': null,
+        'courier_vehicle': null,
+        'courier_avatar': null,
         'payment_method': order.paymentMethod,
         'estimated_arrival_minutes': order.estimatedArrivalMinutes,
       };
 
-      final itemsToInsert = order.items.map((item) => {
-            'product_id': item.product.id,
-            'quantity': item.quantity,
-            'unit_price': item.product.price,
-            'total_price': item.totalPrice,
-          }).toList();
+      final itemsToInsert = order.items
+          .map(
+            (item) => {
+              'product_id': item.product.id,
+              'quantity': item.quantity,
+              'unit_price': item.product.price,
+              'total_price': item.totalPrice,
+            },
+          )
+          .toList();
 
       await client.rpc(
         'place_order_with_stock',
-        params: {
-          'p_order': orderData,
-          'p_items': itemsToInsert,
-        },
+        params: {'p_order': orderData, 'p_items': itemsToInsert},
       );
       return true;
     } catch (e) {
@@ -391,27 +430,44 @@ class SupabaseService {
   }
 
   /// Update an order status and courier tracking in Supabase
-  Future<bool> updateOrderStatus(
-    String orderId,
-    String status, {
-    double? driverProgress,
-    int? estimatedArrivalMinutes,
-    String? courierName,
-    String? courierPhone,
-    String? courierVehicle,
-  }) async {
-    if (!_isInitialized) return false;
+  Future<bool> claimCourierOrder(String orderId) async {
+    lastCourierActionError = null;
+    if (!_isInitialized) {
+      lastCourierActionError = 'Supabase is not initialized.';
+      return false;
+    }
     try {
-      await client.from('orders').update({
-        'status': status,
-        if (driverProgress != null) 'driver_progress': driverProgress,
-        if (estimatedArrivalMinutes != null) 'estimated_arrival_minutes': estimatedArrivalMinutes,
-        if (courierName != null) 'courier_name': courierName,
-        if (courierPhone != null) 'courier_phone': courierPhone,
-        if (courierVehicle != null) 'courier_vehicle': courierVehicle,
-      }).eq('id', orderId);
-      return true;
-    } catch (_) {
+      final result = await client.rpc(
+        'claim_courier_order',
+        params: {'p_order_id': orderId},
+      );
+      if (result == true) return true;
+      lastCourierActionError =
+          'This order was claimed by another courier or your approval is inactive.';
+      return false;
+    } catch (error) {
+      lastCourierActionError = error.toString();
+      return false;
+    }
+  }
+
+  Future<bool> updateCourierOrderStatus(String orderId, String status) async {
+    lastCourierActionError = null;
+    if (!_isInitialized) {
+      lastCourierActionError = 'Supabase is not initialized.';
+      return false;
+    }
+    try {
+      final result = await client.rpc(
+        'update_courier_order_status',
+        params: {'p_order_id': orderId, 'p_status': status},
+      );
+      if (result == true) return true;
+      lastCourierActionError =
+          'This order is no longer assigned to your account or its status changed.';
+      return false;
+    } catch (error) {
+      lastCourierActionError = error.toString();
       return false;
     }
   }
@@ -493,7 +549,7 @@ class SupabaseService {
     if (!_isInitialized) return [];
     final rows = <Map<String, dynamic>>[];
     const pageSize = 1000;
-    for (var offset = 0;; offset += pageSize) {
+    for (var offset = 0; ; offset += pageSize) {
       final response = await client
           .from('reviews')
           .select()
@@ -508,13 +564,15 @@ class SupabaseService {
   }
 
   Future<List<Map<String, dynamic>>> getReviewRatingRows() async {
-    if (!_isInitialized) throw Exception('Database connection is not initialized.');
+    if (!_isInitialized)
+      throw Exception('Database connection is not initialized.');
     return _getAllReviewRows('id, product_id, rating');
   }
 
   /// Fetch every review row visible to the current admin session for analytics.
   Future<List<Map<String, dynamic>>> getAllReviews() async {
-    if (!_isInitialized) throw Exception('Database connection is not initialized.');
+    if (!_isInitialized)
+      throw Exception('Database connection is not initialized.');
     return _getAllReviewRows(
       'id, product_id, rating, created_at, is_verified_purchase',
     );
@@ -523,7 +581,7 @@ class SupabaseService {
   Future<List<Map<String, dynamic>>> _getAllReviewRows(String columns) async {
     final rows = <Map<String, dynamic>>[];
     const pageSize = 1000;
-    for (var offset = 0;; offset += pageSize) {
+    for (var offset = 0; ; offset += pageSize) {
       final response = await client
           .from('reviews')
           .select(columns)
@@ -556,10 +614,15 @@ class SupabaseService {
   Future<List<Map<String, dynamic>>> getNotifications() async {
     if (!_isInitialized) return [];
     try {
-      final response = await client
-          .from('notifications')
-          .select()
-          .order('created_at', ascending: false);
+      final userId = client.auth.currentUser?.id;
+      final baseQuery = client.from('notifications').select();
+      final response = userId == null
+          ? await baseQuery
+                .isFilter('user_id', null)
+                .order('created_at', ascending: false)
+          : await baseQuery
+                .or('user_id.eq.$userId,user_id.is.null')
+                .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(response);
     } catch (_) {
       return [];
@@ -622,12 +685,13 @@ class SupabaseService {
   }) async {
     if (!_isInitialized) return false;
     try {
-      await client.from('profiles').upsert({
-        'id': userId,
-        'name': name,
-        'phone': phone,
-        'role': 'customer',
-      }, onConflict: 'id', ignoreDuplicates: true);
+      await client
+          .from('profiles')
+          .upsert(
+            {'id': userId, 'name': name, 'phone': phone, 'role': 'customer'},
+            onConflict: 'id',
+            ignoreDuplicates: true,
+          );
       return true;
     } catch (_) {
       return false;
@@ -683,12 +747,19 @@ class SupabaseService {
     if (!_isInitialized) return null;
     try {
       final safeName = 'doc_${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      await client.storage.from('driver-documents').uploadBinary(
+      await client.storage
+          .from('driver-documents')
+          .uploadBinary(
             safeName,
             imageBytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
           );
-      final publicUrl = client.storage.from('driver-documents').getPublicUrl(safeName);
+      final publicUrl = client.storage
+          .from('driver-documents')
+          .getPublicUrl(safeName);
       return publicUrl;
     } catch (_) {
       return null;
@@ -738,13 +809,17 @@ class SupabaseService {
   }
 
   /// Update driver recruitment application status (approved / rejected)
-  Future<bool> updateDriverApplicationStatus(String id, String status, {String? notes}) async {
+  Future<bool> updateDriverApplicationStatus(
+    String id,
+    String status, {
+    String? notes,
+  }) async {
     if (!_isInitialized) return false;
     try {
-      await client.from('driver_applications').update({
-        'status': status,
-        if (notes != null) 'notes': notes,
-      }).eq('id', id);
+      await client
+          .from('driver_applications')
+          .update({'status': status, if (notes != null) 'notes': notes})
+          .eq('id', id);
       return true;
     } catch (_) {
       return false;

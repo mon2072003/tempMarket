@@ -23,6 +23,8 @@ class ProductsViewModel extends ChangeNotifier {
     loadProductsFromSupabase();
   }
 
+  List<CategoryModel> get allCategories => List.unmodifiable(_categories);
+
   List<CategoryModel> get categories {
     if (_filterBusinessType == null || _filterBusinessType == 'all') {
       return _categories;

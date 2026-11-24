@@ -73,13 +73,13 @@ BEGIN
         p_order->>'delivery_address',
         COALESCE((p_order->>'dest_lat')::NUMERIC, 24.7136),
         COALESCE((p_order->>'dest_lng')::NUMERIC, 46.6753),
-        COALESCE((p_order->>'driver_progress')::NUMERIC, 0.1),
+        COALESCE((p_order->>'driver_progress')::NUMERIC, 0),
         p_order->>'courier_name',
         p_order->>'courier_phone',
         p_order->>'courier_vehicle',
         p_order->>'courier_avatar',
         p_order->>'payment_method',
-        COALESCE((p_order->>'estimated_arrival_minutes')::INTEGER, 30)
+        (p_order->>'estimated_arrival_minutes')::INTEGER
     );
 
     FOR item_row IN SELECT value FROM jsonb_array_elements(p_items)

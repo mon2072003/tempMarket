@@ -1,8 +1,4 @@
-enum NotificationType {
-  order,
-  promo,
-  system,
-}
+enum NotificationType { order, promo, system }
 
 class NotificationModel {
   final String id;
@@ -14,6 +10,7 @@ class NotificationModel {
   bool isRead;
   final NotificationType type;
   final String? relatedOrderId;
+  final String? userId;
 
   NotificationModel({
     required this.id,
@@ -25,6 +22,7 @@ class NotificationModel {
     this.isRead = false,
     required this.type,
     this.relatedOrderId,
+    this.userId,
   });
 
   String localizedTitle(bool isArabic) => isArabic ? titleAr : titleEn;
@@ -55,6 +53,7 @@ class NotificationModel {
       isRead: json['is_read'] ?? false,
       type: parsedType,
       relatedOrderId: json['related_order_id']?.toString(),
+      userId: json['user_id']?.toString(),
     );
   }
 
@@ -67,6 +66,8 @@ class NotificationModel {
       'body_en': bodyEn,
       'type': type.name,
       'is_read': isRead,
+      if (relatedOrderId != null) 'related_order_id': relatedOrderId,
+      if (userId != null) 'user_id': userId,
     };
   }
 }

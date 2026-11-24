@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../data/models/notification_model.dart';
 import '../core/services/supabase_service.dart';
@@ -5,31 +6,42 @@ import '../core/services/supabase_service.dart';
 class NotificationsViewModel extends ChangeNotifier {
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
+  bool _isRefreshing = false;
+  Timer? _refreshTimer;
 
-  List<NotificationModel> get notifications => List.unmodifiable(_notifications);
+  List<NotificationModel> get notifications =>
+      List.unmodifiable(_notifications);
   int get unreadCount => _notifications.where((n) => !n.isRead).length;
   bool get isLoading => _isLoading;
 
   NotificationsViewModel() {
-    loadNotificationsFromSupabase();
+    unawaited(loadNotificationsFromSupabase());
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => unawaited(loadNotificationsFromSupabase(showLoading: false)),
+    );
   }
 
-  Future<void> loadNotificationsFromSupabase() async {
+  Future<void> loadNotificationsFromSupabase({bool showLoading = true}) async {
     final supabase = SupabaseService();
-    if (!supabase.isInitialized) return;
+    if (!supabase.isInitialized || _isRefreshing) return;
 
-    _isLoading = true;
-    notifyListeners();
+    _isRefreshing = true;
+    if (showLoading) {
+      _isLoading = true;
+      notifyListeners();
+    }
 
     try {
       final rows = await supabase.getNotifications();
-      if (rows.isNotEmpty) {
-        _notifications = rows.map((j) => NotificationModel.fromJson(j)).toList();
-      }
-    } catch (_) {}
-
-    _isLoading = false;
-    notifyListeners();
+      _notifications = rows.map(NotificationModel.fromJson).toList();
+    } catch (_) {
+      // Keep the cached notifications when a refresh fails.
+    } finally {
+      _isRefreshing = false;
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   void markAsRead(String id) {
@@ -37,15 +49,15 @@ class NotificationsViewModel extends ChangeNotifier {
     if (index != -1 && !_notifications[index].isRead) {
       _notifications[index].isRead = true;
       notifyListeners();
-      SupabaseService().markNotificationAsRead(id);
+      unawaited(SupabaseService().markNotificationAsRead(id));
     }
   }
 
   void markAllAsRead() {
-    for (var n in _notifications) {
-      if (!n.isRead) {
-        n.isRead = true;
-        SupabaseService().markNotificationAsRead(n.id);
+    for (final notification in _notifications) {
+      if (!notification.isRead) {
+        notification.isRead = true;
+        unawaited(SupabaseService().markNotificationAsRead(notification.id));
       }
     }
     notifyListeners();
@@ -60,5 +72,11 @@ class NotificationsViewModel extends ChangeNotifier {
     _notifications.insert(0, notification);
     notifyListeners();
     await SupabaseService().insertNotification(notification);
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 }

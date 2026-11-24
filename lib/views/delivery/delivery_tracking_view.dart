@@ -21,9 +21,17 @@ class DeliveryTrackingView extends StatelessWidget {
     if (order == null) {
       return Scaffold(
         appBar: AppBar(title: Text(loc.translate('live_tracking'))),
-        body: Center(child: Text(loc.isArabic ? 'لا توجد طلبات قيد التوصيل' : 'No active delivery order')),
+        body: Center(
+          child: Text(
+            loc.isArabic
+                ? 'لا توجد طلبات قيد التوصيل'
+                : 'No active delivery order',
+          ),
+        ),
       );
     }
+
+    final courierAssigned = order.courier.name.trim().isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -31,13 +39,6 @@ class DeliveryTrackingView extends StatelessWidget {
           loc.translate('live_tracking'),
           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
-        actions: [
-          IconButton(
-            tooltip: loc.isArabic ? 'إعادة تشغيل المحاكاة' : 'Restart Simulation',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => deliveryVM.resetSimulation(),
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -64,7 +65,10 @@ class DeliveryTrackingView extends StatelessWidget {
                   left: 16,
                   right: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.cardTheme.color,
                       borderRadius: BorderRadius.circular(16),
@@ -87,7 +91,11 @@ class DeliveryTrackingView extends StatelessWidget {
                                 color: primary.withAlpha(25),
                                 shape: BoxShape.circle,
                               ),
-                              child: Icon(Icons.access_time_filled_rounded, color: primary, size: 20),
+                              child: Icon(
+                                Icons.access_time_filled_rounded,
+                                color: primary,
+                                size: 20,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             Column(
@@ -97,15 +105,18 @@ class DeliveryTrackingView extends StatelessWidget {
                                   loc.translate('eta'),
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: theme.colorScheme.onSurface.withAlpha(140),
+                                    color: theme.colorScheme.onSurface
+                                        .withAlpha(140),
                                   ),
                                 ),
                                 Text(
                                   order.status == OrderStatus.delivered
-                                      ? (loc.isArabic ? 'وصل المندوب لوجهتك' : 'Driver Arrived')
+                                      ? (loc.isArabic
+                                            ? 'وصل المندوب لوجهتك'
+                                            : 'Driver Arrived')
                                       : (loc.isArabic
-                                          ? '${order.estimatedArrivalMinutes} دقيقة تقريباً'
-                                          : 'approx ${order.estimatedArrivalMinutes} mins'),
+                                            ? '${order.estimatedArrivalMinutes} دقيقة تقريباً'
+                                            : 'approx ${order.estimatedArrivalMinutes} mins'),
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w900,
@@ -119,14 +130,21 @@ class DeliveryTrackingView extends StatelessWidget {
                           ],
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF10B981).withAlpha(25),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.circle, size: 8, color: Color(0xFF10B981)),
+                              const Icon(
+                                Icons.circle,
+                                size: 8,
+                                color: Color(0xFF10B981),
+                              ),
                               const SizedBox(width: 6),
                               Text(
                                 loc.isArabic ? 'مباشر' : 'LIVE',
@@ -154,7 +172,9 @@ class DeliveryTrackingView extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
               decoration: BoxDecoration(
                 color: theme.cardTheme.color,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withAlpha(25),
@@ -198,13 +218,18 @@ class DeliveryTrackingView extends StatelessWidget {
                               '${order.items.length} ${loc.isArabic ? "أصناف" : "items"} • ${order.total.toStringAsFixed(2)} ${loc.translate('sar')}',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: theme.colorScheme.onSurface.withAlpha(140),
+                                color: theme.colorScheme.onSurface.withAlpha(
+                                  140,
+                                ),
                               ),
                             ),
                           ],
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: primary.withAlpha(25),
                             borderRadius: BorderRadius.circular(8),
@@ -233,8 +258,13 @@ class DeliveryTrackingView extends StatelessWidget {
                       children: [
                         CircleAvatar(
                           radius: 24,
-                          backgroundImage: NetworkImage(order.courier.avatarUrl),
+                          backgroundImage: order.courier.avatarUrl.isNotEmpty
+                              ? NetworkImage(order.courier.avatarUrl)
+                              : null,
                           backgroundColor: primary.withAlpha(20),
+                          child: order.courier.avatarUrl.isEmpty
+                              ? const Icon(Icons.delivery_dining_rounded)
+                              : null,
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -242,59 +272,81 @@ class DeliveryTrackingView extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                order.courier.name,
+                                courierAssigned
+                                    ? order.courier.name
+                                    : (loc.isArabic
+                                          ? '\u{628}\u{627}\u{646}\u{62a}\u{638}\u{627}\u{631}\u{20}\u{645}\u{646}\u{62f}\u{648}\u{628}'
+                                          : 'Waiting for a courier'),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
                                 ),
                               ),
                               const SizedBox(height: 2),
-                              Text(
-                                order.courier.vehicle,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: theme.colorScheme.onSurface.withAlpha(130),
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(Icons.star_rounded, size: 14, color: Color(0xFFF59E0B)),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '${order.courier.rating}',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                              if (courierAssigned)
+                                Text(
+                                  order.courier.vehicle,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.onSurface
+                                        .withAlpha(130),
                                   ),
-                                ],
-                              ),
+                                ),
+                              if (courierAssigned)
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.star_rounded,
+                                      size: 14,
+                                      color: Color(0xFFF59E0B),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '${order.courier.rating}',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                             ],
                           ),
                         ),
-                        // Call & Chat buttons
-                        Row(
-                          children: [
-                            IconButton.filledTonal(
-                              icon: const Icon(Icons.call_rounded, size: 18),
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('${loc.translate('call_driver')}: ${order.courier.phone}'),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filled(
-                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                              onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('${loc.translate('chat_driver')}: ${order.courier.name}'),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
+                        // Contact actions appear after a courier accepts.
+                        if (courierAssigned)
+                          Row(
+                            children: [
+                              IconButton.filledTonal(
+                                icon: const Icon(Icons.call_rounded, size: 18),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '${loc.translate('call_driver')}: ${order.courier.phone}',
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filled(
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  size: 18,
+                                ),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '${loc.translate('chat_driver')}: ${order.courier.name}',
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                   ],
@@ -307,7 +359,11 @@ class DeliveryTrackingView extends StatelessWidget {
     );
   }
 
-  Widget _buildTrackingStepper(BuildContext context, OrderModel order, Color primary) {
+  Widget _buildTrackingStepper(
+    BuildContext context,
+    OrderModel order,
+    Color primary,
+  ) {
     final loc = AppLocalizations.of(context);
     final stages = [
       loc.translate('status_placed'),
@@ -357,7 +413,9 @@ class DeliveryTrackingView extends StatelessWidget {
                     Expanded(
                       child: Container(
                         height: 3,
-                        color: index < activeStageIndex ? primary : Colors.grey.withAlpha(60),
+                        color: index < activeStageIndex
+                            ? primary
+                            : Colors.grey.withAlpha(60),
                       ),
                     ),
                 ],

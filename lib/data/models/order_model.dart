@@ -44,12 +44,13 @@ class CourierInfo {
     required this.phone,
     required this.vehicle,
     this.rating = 4.9,
-    this.avatarUrl = 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+    this.avatarUrl = '',
   });
 }
 
 class OrderModel {
   final String id;
+  final String customerId;
   final DateTime date;
   final List<CartItemModel> items;
   final double subtotal;
@@ -68,6 +69,7 @@ class OrderModel {
 
   const OrderModel({
     required this.id,
+    this.customerId = '',
     required this.date,
     required this.items,
     required this.subtotal,
@@ -81,12 +83,13 @@ class OrderModel {
     this.destLng = 46.6753,
     required this.paymentMethod,
     required this.courier,
-    this.estimatedArrivalMinutes = 25,
-    this.driverProgress = 0.65,
+    this.estimatedArrivalMinutes = 0,
+    this.driverProgress = 0,
   });
 
   OrderModel copyWith({
     String? id,
+    String? customerId,
     DateTime? date,
     List<CartItemModel>? items,
     double? subtotal,
@@ -105,6 +108,7 @@ class OrderModel {
   }) {
     return OrderModel(
       id: id ?? this.id,
+      customerId: customerId ?? this.customerId,
       date: date ?? this.date,
       items: items ?? this.items,
       subtotal: subtotal ?? this.subtotal,
@@ -118,12 +122,16 @@ class OrderModel {
       destLng: destLng ?? this.destLng,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       courier: courier ?? this.courier,
-      estimatedArrivalMinutes: estimatedArrivalMinutes ?? this.estimatedArrivalMinutes,
+      estimatedArrivalMinutes:
+          estimatedArrivalMinutes ?? this.estimatedArrivalMinutes,
       driverProgress: driverProgress ?? this.driverProgress,
     );
   }
 
-  factory OrderModel.fromSupabase(Map<String, dynamic> json, {List<ProductModel>? productsPool}) {
+  factory OrderModel.fromSupabase(
+    Map<String, dynamic> json, {
+    List<ProductModel>? productsPool,
+  }) {
     final rawItems = json['order_items'] as List? ?? [];
     final parsedItems = rawItems.map((itemJson) {
       final pId = itemJson['product_id']?.toString() ?? '';
@@ -134,7 +142,8 @@ class OrderModel {
         } catch (_) {}
       }
 
-      final product = matched ??
+      final product =
+          matched ??
           ProductModel(
             id: pId,
             nameAr: 'منتج مسجل',
@@ -144,7 +153,9 @@ class OrderModel {
             price: (itemJson['unit_price'] as num?)?.toDouble() ?? 10.0,
             categoryId: 'cat_general',
             businessType: 'general',
-            images: const ['https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600'],
+            images: const [
+              'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600',
+            ],
             inStock: true,
             unitAr: 'قطعة',
             unitEn: 'Piece',
@@ -158,6 +169,7 @@ class OrderModel {
 
     return OrderModel(
       id: json['id']?.toString() ?? '',
+      customerId: json['user_id']?.toString() ?? '',
       date: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
@@ -173,14 +185,14 @@ class OrderModel {
       destLng: (json['dest_lng'] as num?)?.toDouble() ?? 46.6753,
       paymentMethod: json['payment_method']?.toString() ?? 'cash_on_delivery',
       courier: CourierInfo(
-        name: json['courier_name']?.toString() ?? 'طارق الزهراني',
-        phone: json['courier_phone']?.toString() ?? '+966559876543',
-        vehicle: json['courier_vehicle']?.toString() ?? 'فورد تيريتوري رمادي',
-        avatarUrl: json['courier_avatar']?.toString() ??
-            'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150',
+        name: json['courier_name']?.toString() ?? '',
+        phone: json['courier_phone']?.toString() ?? '',
+        vehicle: json['courier_vehicle']?.toString() ?? '',
+        avatarUrl: json['courier_avatar']?.toString() ?? '',
       ),
-      estimatedArrivalMinutes: (json['estimated_arrival_minutes'] as num?)?.toInt() ?? 30,
-      driverProgress: (json['driver_progress'] as num?)?.toDouble() ?? 0.1,
+      estimatedArrivalMinutes:
+          (json['estimated_arrival_minutes'] as num?)?.toInt() ?? 0,
+      driverProgress: (json['driver_progress'] as num?)?.toDouble() ?? 0,
     );
   }
 }
